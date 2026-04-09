@@ -144,7 +144,7 @@ glmm_data <- benchmark_data %>%
 ```{r, fig.width=12}
 glm_runTime <- glmer(data = glmm_data, 
                      formula = runTime ~ tiles*cores + (1|landscape), 
-                     family = Gamma())
+                     family = Gamma(link = "log"))
 summary(glm_runTime)
 r.squaredGLMM(glm_runTime)
 car::Anova(glm_runTime)

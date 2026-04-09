@@ -358,7 +358,7 @@ cowplot::plot_grid(a,b,c,d)
 
 ```{r, fig.width=12}
 glm_ssim<- glmmTMB(data = glmm_data %>%  filter(metric == "SSIM"), 
-                         formula = value ~ tiles*buffer + T_bufferDist + (1|landscape), 
+                         formula = value ~ tiles*buffer + (1| T_bufferDist) + (1|landscape), 
                          family = beta_family(link = "logit"))
 summary(glm_ssim)
 r.squaredGLMM(glm_ssim)

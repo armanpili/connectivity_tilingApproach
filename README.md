@@ -27,17 +27,17 @@ XXXXXXXXXXXXXXXXXXX (in review). Scalable and efficient functional connectivity 
 
 To reproduce the workflow, make sure to create the following folders within the repository, and download data files at (https://figshare.com/s/afb7eae2e031ed01fb5b)
 
->*./data/*_ # contains subfolders of the modelling landscape  ([?]_stack.tif) and metadata ([?].rds).
->*./figures*_ # path for figures
->*./functions*_ # contains functions
->*./functions/SAMC_tiling.R # function for tiling and bufferingthe landscape (Steps 1 and 2 of our tiling approach).
->*./functions/SAMC_benchmarking.R # function for modelling the connectivity on each tile and merging tiled outputs (Steps 3 and 4 of our tiling approach). Included are scripts for benchmarking runtime of the tiling pipeline. Note: bechmarking memory was only possible through hpc's slurm job accounting.
->*./input*_ # contains subfolders of buffered tiles of the modelling landscape.
->*./output*_ # contains the raw outputs of our tiling approach (merged connectivity maps) and the results of the sensitivity and benchmarking analysis.
->*./scripts*_ # contains scripts
->*./scripts*_
->*./scripts/0_dataPreparation.Rmd*_ # This script contains the R pipeline for creating modelling landscapes. For demonstration, we showed here how to create neutral landscape (10 million grid cells).
->*./scripts/01_TilingandBuffering.Rmd*_ # This script contains the R pipeline for tiling and buffering the landscape, which is steps 1 and 2 of our tiling approach.
->*./scripts/02_SAMCandMerging.Rmd*_ # This script contains the R pipeline for modelling connectivity on each buffered tile and merging the outputs of buffered tiles, which correspond to steps 3 and 4 of our tiling approach.
->*./scripts/03_SensitivityAnalysis.Rmd*_ # This script contains the R pipeline for the sensitivity analysis of spatial accuracy due to tiling and buffering.
->*./scripts/04_benchmarking.Rmd*_ # This script contains the R pipeline for the benchmarking of runtime and maximum memory usage.
+- **./data/** # contains subfolders of the modelling landscape  ([?]_stack.tif) and metadata ([?].rds).
+- **./figures** # path for figures
+- **./functions** # contains functions
+- **./functions/SAMC_tiling.R** # function for tiling and bufferingthe landscape (Steps 1 and 2 of our tiling approach).
+- **./functions/SAMC_benchmarking.R** # function for modelling the connectivity on each tile and merging tiled outputs (Steps 3 and 4 of our tiling approach). Included are scripts for benchmarking runtime of the tiling pipeline. Note: bechmarking memory was only possible through hpc's slurm job accounting.
+- **./input** # contains subfolders of buffered tiles of the modelling landscape.
+- **./output** # contains the raw outputs of our tiling approach (merged connectivity maps) and the results of the sensitivity and benchmarking analysis.
+- **./scripts** # contains scripts
+- **./scripts**
+- **./scripts/0_dataPreparation.Rmd** # This script contains the R pipeline for creating modelling landscapes. For demonstration, we showed here how to create neutral landscape (10 million grid cells).
+- **./scripts/01_TilingandBuffering.Rmd** # This script contains the R pipeline for tiling and buffering the landscape, which is steps 1 and 2 of our tiling approach.
+- **./scripts/02_SAMCandMerging.Rmd** # This script contains the R pipeline for modelling connectivity on each buffered tile and merging the outputs of buffered tiles, which correspond to steps 3 and 4 of our tiling approach.
+- **./scripts/03_SensitivityAnalysis.Rmd** # This script contains the R pipeline for the sensitivity analysis of spatial accuracy due to tiling and buffering.
+- **./scripts/04_benchmarking.Rmd** # This script contains the R pipeline for the benchmarking of runtime and maximum memory usage.

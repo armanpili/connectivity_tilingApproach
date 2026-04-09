@@ -1,0 +1,209 @@
+---
+title: "Scalable and efficient functional connectivity modelling"
+author: "XXXXXXXXXXXXXXXXXXXX"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+This script contains the R pipeline for creating modelling landscapes. For demonstration, we showed here how to create neutral landscape (10 million grid cells).
+
+
+
+# libraries
+
+```{r, warning=FALSE, message = FALSE, error = FALSE}
+library(tidyverse)
+library(samc)
+library(terra)
+library(tidyterra)
+library(raster)
+library(gstat)
+library(NLMR)
+library(landscapetools)
+```
+
+# Creating a neutral landscape model
+
+Neutral landscape models were created using a "mid-point displacement approach" implemented in NLMR.
+
+Key parameters of the landscape model:
+- roughness = 0.9
+
+
+
+## Writing metadata 
+
+Key parameters:
+- Focal area size = 10 million cells
+- Focal area (equivalent) resolution = 100-m
+- Mean dispersal distance in m = 1000
+- Buffer percentile = 0.99
+
+All other parameters will be computed from this information
+
+
+
+```{r}
+caseStudy <- list(
+                  landscapeName = NA, #the name of the landscape.
+                  resolution = NA, # the resolution of the landscape, useful when buffer is in m
+                  displacement = NA, # the mean dispersal distance of the species
+                  buffer_quartile = NA, # the quartile/percenfocal used in calculating the buffer size.
+                  buffer_in_m = NA, # the raw buffer, when based on 95th percentile or something
+                  buffer = NA,  # the number of pixels of the size of the buffer. 
+                  domain_extent = NA, # the extent of the entire modelling domain (focal + buffer)
+                  focal_cellNo = NA, # the number of cells in the focal domain
+                  focal_rows = NA, # the number of rows in the focal region, or sqrt(focal_cellNo if square)
+                  focal_columns = NA, # the number of columns in the focal region, or sqrt(focal_cellNo if square)
+                  focal_extent = NA # the extend of the focal region
+                  )
+
+caseStudy$focal_cellNo <- 10000000
+
+caseStudy$focal_rows <- round(sqrt(caseStudy$focal_cellNo), digits = -3)
+
+caseStudy$focal_columns <- round(sqrt(caseStudy$focal_cellNo), digits = -3)
+
+caseStudy$resolution <- 100
+
+caseStudy$displacement <- 1000
+
+caseStudy$buffer_quartile <- 0.99
+
+
+
+caseStudy$buffer_in_m <- -log(1 - caseStudy$buffer_quartile)/(1/caseStudy$displacement)
+
+caseStudy$buffer <- ceiling(caseStudy$buffer_in_m/caseStudy$resolution)
+
+caseStudy$domain_extent <- c(
+                             0, # x start
+                            (caseStudy$focal_rows + (2*caseStudy$buffer)), #x end
+                             0, #y start
+                            (caseStudy$focal_columns + (2*caseStudy$buffer)) #y end
+                             )
+
+caseStudy$focal_extent <- c(
+                         caseStudy$buffer, # x start
+                         (caseStudy$buffer + caseStudy$focal_rows), #x end
+                         caseStudy$buffer, #y start
+                         (caseStudy$buffer + caseStudy$focal_columns) #y end
+                         )
+
+caseStudy$landscapeName <- "107a_1000_99"
+
+caseStudy
+
+dir.create(paste0("../data/", caseStudy$landscapeName), 
+           recursive = TRUE)
+saveRDS(caseStudy,
+        file = paste0("../data/", caseStudy$landscapeName, "/",
+                      caseStudy$landscapeName,
+                      ".rds"))
+
+```
+
+## caststudy rasters
+
+```{r}
+# rasterising the modelling domain
+domain_rast <- rast(ext = ext(caseStudy$domain_extent), res = 1, vals = 1)
+
+# rasterising the focal region
+focal_rast <- rast(ext = ext(caseStudy$focal_extent), res = 1, vals = 1)
+
+# rasterising the outer buffer
+outerBuffer <- domain_rast - extend(focal_rast, ext(domain_rast), fill = 0)
+outerBuffer[outerBuffer == 0] <- NA
+
+plot(domain_rast)
+plot(focal_rast, add = TRUE, col = "green")
+```
+Map legend:
+Green = focal area (area where we want to model connectivity)
+Yellow = outer buffers.
+
+```{r}
+set.seed(49)
+nlm_out <- nlm_mpd(ncol = caseStudy$domain_extent[2],
+                       nrow = caseStudy$domain_extent[4],
+                       resolution = 1,
+                       roughness = 0.80)
+plot(nlm_out, main = "Neutral Landscape Model (roughness = 0.8, seed = 49)")
+```
+
+
+### Source raster
+
+Key parameters:
+Proportion of habitat (vs matrix) = 0.3
+
+```{r}
+init_r <- util_classify(x = nlm_out, 
+                        weighting = c(0.7, 0.3))
+init_r <- init_r - 1
+init_r <- extend(x = rast(init_r), 
+               y = ext(caseStudy$domain_extent),
+               fill = 0)
+plot(init_r, main = "Source raster (30% source habitat)")
+```
+Map legend:
+Violet = matrix
+Yellow = habitat
+
+### Resistance raster
+
+```{r}
+set.seed(49)
+res_r <- 1 - rast(nlm_out)
+
+#re-scale resistance to 1-100
+res_r <- stretch(res_r, 
+                 minv = 1, 
+                 maxv = 100)
+res_r <- extend(x = res_r, 
+               y = ext(caseStudy$domain_extent),
+               fill = 100)
+
+#adjust resistance in habitat
+res_r[init_r != 0] <- 1
+plot(res_r, main = "Resistance raster")
+```
+
+
+### Absorption raster
+
+```{r}
+pixel_dist <- caseStudy$displacement/caseStudy$resolution
+abs <- exp(-1.247 - 1.788*log(pixel_dist)) #value for dispersal from Fletcher et al. 2023
+abs_r <- rast(res_r, vals = abs)
+plot(abs_r, main = "Absorption raster")
+```
+
+## Saving the Landscape
+```{r}
+samc_stack <- c(res_r, abs_r, init_r)
+names(samc_stack) <- c("res", "abs", "init")
+samc_stack[any(is.na(samc_stack))] <- NA
+
+
+
+writeRaster(samc_stack, paste0("../data/",
+                               caseStudy$landscapeName, "/",
+                               caseStudy$landscapeName, "_stack.tif"), overwrite=TRUE)
+
+
+
+#plot samc_stack
+plot(samc_stack)
+```
+```{r}
+library(grateful)
+grateful::cite_packages(output = "file", out.dir = "../", out.format = "docx", out.file = "references_dataPreparation", skip.missing = TRUE)
+```
+

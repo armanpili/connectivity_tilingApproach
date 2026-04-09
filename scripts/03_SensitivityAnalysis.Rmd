@@ -1,0 +1,378 @@
+---
+title: "Scalable and efficient functional connectivity modelling"
+author: "XXXXXXXXXXXXXXXXXXXX"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+This script contains the R pipeline for the sensitivity analysis of spatial accuracy due to tiling and buffering.
+
+# Upload libraries
+
+```{r, warning=FALSE, message = FALSE, error = FALSE}
+library(tidyverse)
+library(samc)
+library(terra)
+library(tidyterra)
+library(khroma)
+library(raster)
+library(SSIMmap)
+library(lme4)
+library(car)
+library(broom)
+library(MuMIn)
+library(arm)
+library(glmmTMB)
+```
+
+
+# Upload metadata of the landscape
+
+```{r}
+caseStudy <- readRDS("../data/cs_107a_1000_99.rds")
+```
+
+# Upload the reference (no tiling) and merged (with tiling) connectivity maps.
+
+
+```{r}
+reference_raster <- rast(paste0("../output/107_a_1000_99/107_a_1000_99_1/visitation/visitation_1.tif"))
+
+tiledOutput_raster <- rast(reference_raster)
+
+for (i in c("4", "9", "16", "25")) {
+  tiledOutput_raster <- c(tiledOutput_raster,
+                          rast(paste0("../output/107_a_1000_99/107_a_1000_99_",
+                                      i, "/visitation/visitation_1.tif"
+                                      )
+                               ))
+}
+names(tiledOutput_raster) <- c("4", "9", "16", "25")
+
+reference_raster <- crop(reference_raster,
+                         ext(caseStudy$focal_extent))
+
+tiledOutput_raster <- crop(tiledOutput_raster,
+                         ext(caseStudy$focal_extent))
+
+
+
+plotdata <- as.data.frame(tiledOutput_raster, xy = TRUE) %>% 
+  pivot_longer(cols = c("4", "9", "16", "25"), 
+               names_to = "tiles", 
+               values_to = "visitation") %>% 
+  mutate(tiles = factor(tiles,
+                        levels = c("4", "9", "16", "25")))
+
+plotdata %>% 
+  ggplot() +
+  geom_raster(aes(x = x,
+                  y = y,
+                  fill = visitation)) + 
+  facet_grid(cols = vars(tiles)) +
+  scale_fill_bamako(reverse = TRUE, 
+                    transform = "sqrt", 
+                    na.value = NA) + 
+  theme_void() +
+  theme(aspect.ratio = 1,
+        legend.key.width = unit(0.25, 'cm'),
+        legend.key.height = unit(0.5, 'cm'))
+              
+```
+
+
+```{r}
+ggsave(plot = last_plot(), 
+       filename = "../figures/SA_visitation.png", 
+       dpi = 300, 
+       units = "mm", 
+       height = 40, 
+       width = 200)
+```
+
+
+# Compute difference of reference (no tiling) and merged (with tiling) connectivity maps.
+
+
+```{r}
+error_raster <- rast(reference_raster)
+
+tiles <- c("4", "9", "16", "25")
+for (i in 1:length(tiles)) {
+  error_raster <- c(error_raster,
+                  tiledOutput_raster[[i]] - reference_raster)
+}
+
+
+plot_range <- c(min(minmax(error_raster)[1,]),
+                max(minmax(error_raster)[2,]))
+
+
+plotdata <- as.data.frame(error_raster, xy = TRUE) %>% 
+  pivot_longer(cols = c("4", "9", "16", "25"), 
+               names_to = "tiles", 
+               values_to = "difference") %>% 
+  mutate(tiles = factor(tiles,
+                        levels = c("4", "9", "16", "25")))
+
+plotdata %>% 
+  ggplot() +
+  geom_raster(aes(x = x,
+                  y = y,
+                  fill = difference)) + 
+  facet_grid(cols = vars(tiles)) +
+  scale_fill_bam() + 
+  theme_void() +
+  theme(aspect.ratio = 1,
+        legend.key.width = unit(0.25, 'cm'),
+        legend.key.height = unit(0.5, 'cm'))
+              
+```
+
+
+```{r}
+ggsave(plot = last_plot(), 
+       filename = "../figures/SA_difference.png", 
+       dpi = 300, 
+       units = "mm", 
+       height = 40, 
+       width = 200)
+```
+
+
+# Compute spatial similarity of reference (no tiling) and merged (with tiling) connectivity maps.
+
+```{r}
+normalize <- function(x) {
+  (x - min(x[], na.rm=TRUE)) / (max(x[], na.rm=TRUE) - min(x[], na.rm=TRUE))
+}
+
+reference_img <- app(reference_raster, normalize)
+
+tileOutput_img <- rast(tiledOutput_raster)
+
+for (i in 1:length(names(tiledOutput_raster))) {
+  tileOutput_img <- c(tileOutput_img, 
+                      app(tiledOutput_raster[[i]], normalize)
+                    )
+
+}
+tiles <- c("4", "9", "16", "25")
+
+names(tileOutput_img) <- tiles
+
+
+SSIM_raster <- rast(reference_raster)
+
+for (i in 1:length(tiles)) {
+  SSIM_raster <- c(SSIM_raster, 
+                   ssim_raster(reference_img, 
+                               tileOutput_img[[i]], 
+                               global = FALSE)[[1]]
+  )
+  
+}
+names(SSIM_raster) <- tiles
+```
+
+
+```{r}
+plotdata <- as.data.frame(SSIM_raster, xy = TRUE) %>% 
+  pivot_longer(cols = c("4", "9", "16", "25"), 
+               names_to = "tiles", 
+               values_to = "SSIM") %>% 
+  mutate(tiles = factor(tiles,
+                        levels = c("4", "9", "16", "25")))
+
+plotdata %>% 
+  ggplot() +
+  geom_raster(aes(x = x,
+                  y = y,
+                  fill = SSIM)) + 
+  facet_grid(cols = vars(tiles)) +
+  scale_fill_bam() + 
+  theme_void() +
+  theme(aspect.ratio = 1,
+        legend.key.width = unit(0.25, 'cm'),
+        legend.key.height = unit(0.5, 'cm'))
+              
+```
+
+
+```{r}
+ggsave(plot = last_plot(), 
+       filename = "../figures/SA_ssim.png", 
+       dpi = 300, 
+       units = "mm", 
+       height = 40, 
+       width = 200)
+```
+
+
+# Compute global spatial error metrcs
+
+- *MAD* - Mean Absolute Difference
+- *RMSD* - Root Mean Square Difference
+- *SSIM* - Spatial Similarit
+
+
+```{r}
+bind_cols(data.frame(metrics = c("MAD", "RMSD", "SSIM")),
+          bind_rows(
+as.data.frame(error_raster, xy = TRUE) %>% 
+  dplyr::select(-c(x,y)) %>% 
+  summarise(across(everything(), ~ mean(abs(.x), na.rm = TRUE))),
+
+as.data.frame(error_raster, xy = TRUE) %>% 
+  dplyr::select(-c(x,y)) %>% 
+  summarise(across(everything(), ~ round(sqrt(mean(.x^2, na.rm = TRUE)), 4))),
+
+as.data.frame(SSIM_raster, xy = TRUE) %>% 
+  dplyr::select(-c(x,y)) %>% 
+  summarise(across(everything(), ~ mean(.x, na.rm = TRUE)))
+)
+)
+```
+
+
+
+## All the data
+
+```{r}
+head(SA_Results_all <- read.csv("../output/SA_Results_107.csv"))
+```
+
+
+
+```{r}
+SA_Results_all %>% 
+  mutate(T_bufferDist = factor(T_bufferDist)) %>% 
+  ggplot(aes(x = T_nTiles,
+             y = value,
+             color = T_bufferDist,
+             group = T_bufferDist)) +
+  geom_point(alpha = 0.2) +
+  stat_summary(geom = "pointrange", fun.data = "mean_cl_boot", size = .5) +
+  stat_summary(geom = "line", fun = "mean") +
+#  guides(color = "none") +
+  labs(y = "",
+       x = "# of Tiles",
+       color = "Dispersal distance") +
+  facet_grid(rows = vars(metric), 
+             cols = vars(buffer),
+             scale = "free" ,
+             switch="y") +
+  scale_x_continuous(breaks = c(4, 9, 16, 25)) +
+  scale_color_bamako(discrete = TRUE, 
+                     reverse = TRUE) +
+#  scale_color_muted() +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        strip.background = element_blank(),
+        strip.placement = "outside",
+        aspect.ratio = 1)
+```
+
+
+```{r}
+ggsave(plot = last_plot(), 
+       filename = "../figures/sensitivityAnalysis.png", 
+       dpi = 300, 
+       units = "mm", 
+       width = 200)
+```
+
+
+
+# Statistical test
+
+```{r}
+head(glmm_data <- SA_Results_all %>% 
+  rename("tiles" = "T_nTiles",
+         "landscape" = "focalAreaName") %>% 
+    na.omit()
+)
+```
+
+## Fixed effects of tile number and buffer size on RMSD
+
+```{r, fig.width=12}
+glm_rmsd <- glmer(data = glmm_data %>%  filter(metric == "RMSD"), 
+                         formula = value ~ tiles*buffer + (1|T_bufferDist)  + (1|landscape), 
+                         family = Gamma(link = "log"))
+summary(glm_rmsd)
+r.squaredGLMM(glm_rmsd)
+car::Anova(glm_rmsd)
+
+# diagnostic plot
+a <- plot(glm_rmsd, 
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "fitted vs residual with smooth line")
+b <- plot(glm_rmsd,
+          sqrt(abs(resid(.)))~fitted(.),
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "scale-location")
+c <- lattice::qqmath(glm_rmsd, 
+                     main = "Q-Q")
+d <- plot(glm_rmsd, rstudent(.) ~ hatvalues(.), 
+          main = "residuals vs leverage")
+cowplot::plot_grid(a,b,c,d)
+```
+
+## Fixed effects of tile number and buffer size on MAD
+
+```{r, fig.width=12}
+glm_mad<- glmer(data = glmm_data %>%  filter(metric == "MAD"), 
+                         formula = value ~ tiles*buffer + (1|T_bufferDist) + (1|landscape), 
+                         family = Gamma(link = "log"))
+summary(glm_mad)
+r.squaredGLMM(glm_mad)
+car::Anova(glm_mad)
+
+# diagnostic plot
+a <- plot(glm_mad, 
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "fitted vs residual with smooth line")
+b <- plot(glm_mad,
+          sqrt(abs(resid(.)))~fitted(.),
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "scale-location")
+c <- lattice::qqmath(glm_mad, 
+                     main = "Q-Q")
+d <- plot(glm_mad, rstudent(.) ~ hatvalues(.), 
+          main = "residuals vs leverage")
+cowplot::plot_grid(a,b,c,d)
+```
+
+## Fixed effects of tile number and buffer size on SSIM
+
+
+```{r, fig.width=12}
+glm_ssim<- glmmTMB(data = glmm_data %>%  filter(metric == "SSIM"), 
+                         formula = value ~ tiles*buffer + T_bufferDist + (1|landscape), 
+                         family = beta_family(link = "logit"))
+summary(glm_ssim)
+r.squaredGLMM(glm_ssim)
+car::Anova(glm_ssim)
+
+# diagnostic plot
+binnedplot(predict(glm_ssim,type='response'),
+           resid(glm_ssim,type='response'))
+```
+
+# References
+
+```{r}
+library(grateful)
+grateful::cite_packages(output = "file", out.dir = "../", out.format = "docx", out.file = "references_sensitivityAnalysis", skip.missing = TRUE)
+```
+

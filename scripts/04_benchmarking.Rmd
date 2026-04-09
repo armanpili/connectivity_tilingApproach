@@ -1,0 +1,202 @@
+---
+title: "Scalable and efficient functional connectivity modelling"
+author: "XXXXXXXXXXXXXXXXXXXX"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+This script contains the R pipeline for the benchmarking of runtime and maximum memory usage.
+
+# Upload libraries
+```{r, warning=FALSE, message = FALSE, error = FALSE}
+library(tidyverse)
+library(cowplot)
+library(khroma)
+library(terra)
+library(lme4)
+library(car)
+library(broom)
+library(MuMIn)
+library(lattice)
+```
+
+# Upload the benchmarking data
+
+```{r}
+head(benchmark_data <- read.csv("../output/Benchmarking_Results_107.csv")
+)
+```
+
+# Benchmarking results
+
+```{r fig.width=3, fig.height=6}
+a <- benchmark_data %>% 
+  ggplot(aes(y = runTime, 
+             x = T_nTiles)) +
+  geom_point(aes(color = nCores,
+                   group = nCores),
+             position = position_jitter(width = 0.2),
+             alpha = 0.2, 
+             size = 1) +
+  stat_summary(aes(color = nCores,
+                   group = nCores),
+               geom = "point", 
+               size = 2) +
+  stat_summary(aes(color = nCores,
+                   group = nCores),
+               geom = "line",
+               size = 1) +
+  labs(y = "Runtime (H)",
+       x = "# of Tiles",
+       color = "# of Cores") +
+  scale_x_continuous(breaks = c(1, 4, 9, 16, 25)) +
+  scale_color_bamako(reverse = TRUE, 
+                    range = c(0.2,1),
+                    breaks = c(1,2,4,6,8,10)) +
+  theme_bw() +
+  theme(legend.position = "none")+
+  theme(aspect.ratio = 1)
+
+b <- benchmark_data %>% 
+  ggplot(aes(y = runTime_speedup, 
+             x = T_nTiles)) +
+  geom_point(aes(color = nCores,
+                   group = nCores),
+             position = position_jitter(width = 0.2),
+             alpha = 0.2, size = 1) +
+  stat_summary(aes(color = nCores,
+                   group = nCores),
+               geom = "point",
+               size = 2) +
+  stat_summary(aes(color = nCores,
+                   group = nCores),
+               geom = "line",
+               size = 1) +
+  labs(y = "Speed up",
+       x = "# of Tiles",
+       color = "# of Cores") +
+  scale_x_continuous(breaks = c(1, 4, 9, 16, 25)) +
+  scale_color_bamako(reverse = TRUE, 
+                    range = c(0.2,1),
+                    breaks = c(1, 2,4,6,8,10)) +
+  theme_bw()+
+  theme(legend.position = "none")+
+  theme(aspect.ratio = 1)
+
+c <- benchmark_data %>% 
+  ggplot(aes(y = memory, 
+             x = T_nTiles)) +
+  geom_point(aes(color = nCores,
+                   group = nCores),
+             position = position_jitter(width = 0.2),
+             alpha = 0.2, 
+             size = 1) +
+  stat_summary(aes(color = nCores,
+                   group = nCores),
+               geom = "point",
+               size = 2) +
+  stat_summary(aes(color = nCores,
+                   group = nCores),
+               geom = "line",
+               size = 1) +
+  labs(y = "Max Memory Usage (GB)",
+       x = "# of Tiles",
+       color = "# of Cores") +
+  scale_x_continuous(breaks = c(1, 4, 9, 16, 25)) +
+  scale_color_bamako(reverse = TRUE, 
+                    range = c(0.2,1),
+                    breaks = c(1,2,4,6,8,10)) +
+  theme_bw()+
+  theme(legend.position = "bottom",
+        aspect.ratio = 1)
+
+plot_grid(a,b,c, nrow = 3, rel_heights =  c(1,1,1.35))
+```
+
+
+```{r}
+ggsave(plot = last_plot(), 
+       filename = "../figures/benchmark.jpg", 
+       dpi = 300, 
+       units = "mm",  
+       width = 90)
+```
+
+
+# Statistical test
+
+```{r}
+glmm_data <- benchmark_data %>%
+  rename("tiles" = "T_nTiles",
+         "cores" = "nCores",
+         "landscape" = "focalArea")
+```
+
+
+## Fixed effects of tile number and parallelisation on runtime
+
+
+```{r, fig.width=12}
+glm_runTime <- glmer(data = glmm_data, 
+                     formula = runTime ~ tiles*cores + (1|landscape), 
+                     family = Gamma())
+summary(glm_runTime)
+r.squaredGLMM(glm_runTime)
+car::Anova(glm_runTime)
+
+# diagnostic plot
+a <- plot(glm_runTime, 
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "fitted vs residual with smooth line")
+b <- plot(glm_runTime,
+          sqrt(abs(resid(.)))~fitted(.),
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "scale-location")
+c <- lattice::qqmath(glm_runTime, 
+                     main = "Q-Q")
+d <- plot(glm_runTime, rstudent(.) ~ hatvalues(.), 
+          main = "residuals vs leverage")
+cowplot::plot_grid(a,b,c,d)
+```
+
+## Fixed effects of tile number and parallelisation on maximum memory usage
+
+```{r, fig.width=12}
+glm_memory <- glmer(data = glmm_data,
+                         formula = memory ~ tiles*cores + (1|landscape), 
+                         family = Gamma(link = "log"))
+summary(glm_memory)
+r.squaredGLMM(glm_memory)
+car::Anova(glm_memory)
+
+# diagnostic plot
+a <- plot(glm_memory, 
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "fitted vs residual with smooth line")
+b <- plot(glm_memory,
+          sqrt(abs(resid(.)))~fitted(.),
+          type=c("p","smooth"), 
+          col.line=1,
+          main = "scale-location")
+c <- lattice::qqmath(glm_memory, 
+                     main = "Q-Q")
+d <- plot(glm_memory, rstudent(.) ~ hatvalues(.), 
+          main = "residuals vs leverage")
+cowplot::plot_grid(a,b,c,d)
+```
+
+# Reference
+
+```{r}
+library(grateful)
+grateful::cite_packages(output = "file", out.dir = "../", out.format = "docx", out.file = "references_benchmarking", skip.missing = TRUE)
+```
+

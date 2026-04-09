@@ -1,0 +1,102 @@
+---
+title: "Scalable and efficient functional connectivity modelling"
+author: "XXXXXXXXXXXXXXXXXXXX"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+This script contains the R pipeline for modelling connectivity on each buffered tile and merging the outputs of buffered tiles, which correspond to steps 3 and 4 of our tiling approach.
+
+
+# libraries
+
+```{r, warning=FALSE, message = FALSE, error = FALSE}
+library(tidyverse)
+library(samc)
+library(terra)
+library(tidyterra)
+library(raster)
+library(parallel)
+library(pryr)
+library(doParallel)
+library(foreach)
+```
+
+# Upload case study information
+
+```{r}
+caseStudy <- readRDS("../data/107a_1000_99/107a_1000_99.rds")
+caseStudy
+```
+
+# The set of tiles you want to model
+```{r}
+nTiles <- 9
+```
+
+# Loading the function
+
+```{r}
+source("../functions/SAMC_benchmarking.R")
+```
+
+THE FUNCTION:
+
+samc_tiling(
+- *dataResistance*, # one .tif file OR vector string of pathnames to several Resistance raster tiles
+- *dataAbsorption*, # one .tif file OR vector string of pathnames to several Absorption raster tiles
+- *dataInitiation*, # one .tif file OR vector string of pathnames to several Source raster tiles
+- *transitionModel*, # list containing arguments on how transition matrix will be calculated from the provided input rasters. Default: list(fun = function(x) 1/mean(x), dir = 8, sym = TRUE)
+- *analysis*, # can be one or several SAMC metrics: c("distribution", "mortality", "survival", "visitation", "visitation_net"). Default: all mentioned metrics
+- *domainExtent* # extent of the modelling domain (the extent of the original landscape, focal area + buffer)
+- *domainName*, # naming convention of the domain (for making folders)
+- *experimentName*, # the experiment name (for making folders)
+- *nCores*, # the numeber of processors when running in parallel; Default: 1 (no parallelisation)
+- *replicateNumber*, # number of replicates Default: 1
+- *extentFocalArea*, # Extent of focal area
+- *saveRaster*, #  whether the output rasters should be saved. Default: TRUE
+- *purgeExistingTiles*, # Whether to delete previous files of same modelName. Default: FALSE
+- *outputFolder*, #directory where outputs will be saved default: "../output",
+- *saveMeta*) # whether metadata should be saved. Default: TRUE,
+
+
+# SAMC connectivity modelling and merging
+
+```{r}
+data_tiles <- readRDS(paste0("../input/107a_1000_99/", 
+                               "tiles_",nTiles, "/",
+                               "107a_1000_99_tiles_",nTiles, ".rds"))
+  
+samc_out <- samc_benchmarking(dataResistance = data_tiles$resistance,
+                                dataAbsorption = data_tiles$absorption,
+                                dataInitiation = data_tiles$initiation,
+                                analysis = c("visitation", "mortality"),
+                                domainExtent = ext(data_tiles$domainExtent),
+                                domainName  = caseStudy$landscapeName,
+                                experimentName = "107a_1000_99_9",
+                                nCores = 1, 
+                                replicateNumber = 1,
+                                saveRaster = TRUE)
+```
+
+```{r}
+par(mfrow = c(1,2))
+plot(rast(samc_out$analysisOutput$visitation), main = "Visitation")
+plot(rast(samc_out$analysisOutput$mortality), main = "mortality")
+```
+
+
+```{r}
+library(grateful)
+grateful::cite_packages(output = "file", 
+                        out.dir = "../", 
+                        out.format = "docx",
+                        out.file = "references_SAMCandMerging", 
+                        skip.missing = TRUE)
+```
+

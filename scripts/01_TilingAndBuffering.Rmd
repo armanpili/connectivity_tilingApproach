@@ -1,0 +1,112 @@
+---
+title: "Scalable and efficient functional connectivity modelling"
+author: "XXXXXXXXXXXXXXXXXXXX"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+This script contains the R pipeline for tiling and buffering the landscape, which is steps 1 and 2 of our tiling approach.
+
+
+
+# libraries
+
+```{r, warning=FALSE, message = FALSE, error = FALSE}
+library(tidyverse)
+library(samc)
+library(terra)
+library(tidyterra)
+library(raster)
+library(parallel)
+library(pryr)
+library(doParallel)
+library(foreach)
+```
+
+# Upload case study information
+
+```{r}
+caseStudy <- readRDS("../data/107a_1000_99/107a_1000_99.rds")
+caseStudy
+```
+
+# Upload the landscape
+- resistance raster
+- source raster
+- absorption raster
+
+```{r}
+samc_stack <- rast("../data/107a_1000_99/107a_1000_99_stack.tif")
+plot(samc_stack)
+```
+
+
+# Loading the tiling function
+
+```{r}
+source("../functions/SAMC_tiling.R")
+```
+
+THE FUNCTION:
+
+samc_tiling(dataResistance, # Resistance raster
+            dataAbsorption, # Absorption raster
+            dataInitiation, # Initiation raster
+            extentFocalArea, # Extent of focal area
+            tileDimensions, # 2 values for number of rows and cols for the zoning of tiles
+            bufferDistance, # Buffer distance
+            purgeExistingTiles = TRUE, # Whether to delete previous files of same modelName
+            modelname)
+
+
+Tiling (i.e., spatial chunking) the modelling domain involves two processes: 
+(1) make the "zones" or the tiling blueprint,
+(2) then tile (i.e., spatially slice) the rasters using the zones.
+
+OUTPUT is a list containing filepaths for the 
+
+```{r}
+### tiles ###
+tile_zone <- rast(
+                  nrows= 5, # number of tile rows
+                  ncols = 5, # number of tile cols
+                  extent = caseStudy$focal_extent # Extent of main landscape
+                  )
+plot(samc_stack$init, main = "Tiling zones (25 tiles)")
+plot(as.polygons(tile_zone, dissolve = FALSE), color = "white", add = TRUE)
+```
+
+
+# Tiling the raster
+
+```{r}
+for (i in c(2,3,4,5)) {
+  data_tiles <- samc_tiling(domainName = caseStudy$landscapeName,
+                            dataResistance = samc_stack$res,
+                            dataAbsorption = samc_stack$abs,
+                            dataInitiation = samc_stack$init,
+                            extentFocalArea = caseStudy$focal_extent,
+                            tileDimensions = c(i,i),
+                            bufferDistance = caseStudy$buffer, 
+                            purgeExistingTiles = TRUE)
+  
+}
+
+par(mfrow = c(1,3))
+plot(rast(data_tiles$resistance[1]), main = "Resistance tile\n(1 of 25)")
+plot(rast(data_tiles$initiation[1]), main = "Source tile\n(1 of 25)")
+plot(rast(data_tiles$absorption[1]), main = "Absorption tile\n(1 of 25)")
+```
+
+Notice the buffer region of the Source tile; cell values are set to zero so that no movement starts at he buffers.
+
+```{r}
+library(grateful)
+grateful::cite_packages(output = "file", out.dir = "../", out.format = "docx", out.file = "references_tilingAndBuffering, skip.missing = TRUE)
+```
+

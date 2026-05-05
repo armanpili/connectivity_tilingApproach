@@ -27,7 +27,7 @@ library(car)
 library(broom)
 library(MuMIn)
 library(arm)
-library(glmmTMB)
+library(betareg)
 ```
 
 
@@ -293,6 +293,8 @@ ggsave(plot = last_plot(),
 
 ```{r}
 head(glmm_data <- SA_Results_all %>% 
+    mutate(T_nTiles = scale(T_nTiles),
+           buffer = scale(buffer)) %>% 
   rename("tiles" = "T_nTiles",
          "landscape" = "focalAreaName") %>% 
     na.omit()
@@ -302,72 +304,207 @@ head(glmm_data <- SA_Results_all %>%
 ## Fixed effects of tile number and buffer size on RMSD
 
 ```{r, fig.width=12}
-glm_rmsd <- glmer(data = glmm_data %>%  filter(metric == "RMSD"), 
-                         formula = value ~ tiles*buffer + (1|T_bufferDist)  + (1|landscape), 
+glm_rmsd <- glm(data = glmm_data %>%  filter(metric == "RMSD"), 
+                         formula = value ~ tiles*buffer + T_bufferDist + landscape, 
                          family = Gamma(link = "log"))
 summary(glm_rmsd)
 r.squaredGLMM(glm_rmsd)
 car::Anova(glm_rmsd)
 
+tidy(glm_rmsd) %>% 
+  write.csv("../output/glm_summary_rmsd.csv")
+
+tidy(car::Anova(glm_rmsd))%>% 
+  write.csv("../output/glm_anova_rmsd.csv")
+
 # diagnostic plot
-a <- plot(glm_rmsd, 
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "fitted vs residual with smooth line")
-b <- plot(glm_rmsd,
-          sqrt(abs(resid(.)))~fitted(.),
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "scale-location")
-c <- lattice::qqmath(glm_rmsd, 
-                     main = "Q-Q")
-d <- plot(glm_rmsd, rstudent(.) ~ hatvalues(.), 
-          main = "residuals vs leverage")
-cowplot::plot_grid(a,b,c,d)
+plot(glm_rmsd)
 ```
+
+
+```{r}
+R_sq <- rep(NA, 4)
+AIC_delta <- rep(NA,4)
+
+glm_null <- glm(data = glmm_data %>%  filter(metric == "RMSD"), 
+                formula = value ~ T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[1] <- r.squaredGLMM(glm_null)[2,2]
+AIC_delta[1] <- AICc(glm_null)
+
+glm_1 <- glm(data = glmm_data %>%  filter(metric == "RMSD"), 
+                formula = value ~ tiles + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[2] <- r.squaredGLMM(glm_1)[2,2]
+AIC_delta[2] <- AICc(glm_1)
+
+glm_2 <- glm(data = glmm_data %>%  filter(metric == "RMSD"), 
+                formula = value ~ buffer + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[3] <- r.squaredGLMM(glm_2)[2,2]
+AIC_delta[3] <- AICc(glm_2)
+
+glm_3 <- glm(data = glmm_data %>%  filter(metric == "RMSD"), 
+                formula = value ~ tiles + buffer + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[4] <- r.squaredGLMM(glm_3)[2,2]
+AIC_delta[4] <- AICc(glm_3)
+
+glm_4 <- glm(data = glmm_data %>%  filter(metric == "RMSD"), 
+                formula = value ~ tiles*buffer + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[5] <- r.squaredGLMM(glm_4)[2,2]
+AIC_delta[5] <- AICc(glm_4)
+
+data.frame(glm = c("null", "tiles", "buffer", "tiles + buffer", "tiles * buffer"),
+           R2 = R_sq,
+           AICc = min(AIC_delta)- AIC_delta)
+
+data.frame(glm = c("null", "tiles", "buffer", "tiles + buffer", "tiles * buffer"),
+           R2 = R_sq,
+           AICc = AIC_delta-min(AIC_delta)) %>% 
+  write.csv("../output/glm_rmsd.csv")
+
+
+anova(glm_null, glm_1, glm_2, glm_3, glm_4)
+
+```
+
 
 ## Fixed effects of tile number and buffer size on MAD
 
 ```{r, fig.width=12}
-glm_mad<- glmer(data = glmm_data %>%  filter(metric == "MAD"), 
-                         formula = value ~ tiles*buffer + (1|T_bufferDist) + (1|landscape), 
+glm_mad<- glm(data = glmm_data %>%  filter(metric == "MAD"), 
+                         formula = value ~ tiles*buffer + T_bufferDist + landscape, 
                          family = Gamma(link = "log"))
+
 summary(glm_mad)
 r.squaredGLMM(glm_mad)
 car::Anova(glm_mad)
 
+tidy(glm_mad) %>% 
+  write.csv("../output/glm_summary_mad.csv")
+
+tidy(car::Anova(glm_mad))%>% 
+  write.csv("../output/glm_anova_mad.csv")
+
 # diagnostic plot
-a <- plot(glm_mad, 
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "fitted vs residual with smooth line")
-b <- plot(glm_mad,
-          sqrt(abs(resid(.)))~fitted(.),
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "scale-location")
-c <- lattice::qqmath(glm_mad, 
-                     main = "Q-Q")
-d <- plot(glm_mad, rstudent(.) ~ hatvalues(.), 
-          main = "residuals vs leverage")
-cowplot::plot_grid(a,b,c,d)
+plot(glm_mad)
 ```
+
+```{r}
+R_sq <- rep(NA, 4)
+AIC_delta <- rep(NA,4)
+
+glm_null <- glm(data = glmm_data %>%  filter(metric == "MAD"), 
+                formula = value ~ T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[1] <- r.squaredGLMM(glm_null)[2,2]
+AIC_delta[1] <- AICc(glm_null)
+
+glm_1 <- glm(data = glmm_data %>%  filter(metric == "MAD"), 
+                formula = value ~ tiles + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[2] <- r.squaredGLMM(glm_1)[2,2]
+AIC_delta[2] <- AICc(glm_1)
+
+glm_2 <- glm(data = glmm_data %>%  filter(metric == "MAD"), 
+                formula = value ~ buffer + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[3] <- r.squaredGLMM(glm_2)[2,2]
+AIC_delta[3] <- AICc(glm_2)
+
+glm_3 <- glm(data = glmm_data %>%  filter(metric == "MAD"), 
+                formula = value ~ tiles + buffer + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[4] <- r.squaredGLMM(glm_3)[2,2]
+AIC_delta[4] <- AICc(glm_3)
+
+glm_4 <- glm(data = glmm_data %>%  filter(metric == "MAD"), 
+                formula = value ~ tiles*buffer + T_bufferDist + landscape, 
+                family = Gamma(link = "log"))
+R_sq[5] <- r.squaredGLMM(glm_4)[2,2]
+AIC_delta[5] <- AICc(glm_4)
+
+data.frame(glm = c("null", "tiles", "buffer", "tiles + buffer", "tiles * buffer"),
+           R2 = R_sq,
+           AICc = min(AIC_delta)- AIC_delta)
+
+data.frame(glm = c("null", "tiles", "buffer", "tiles + buffer", "tiles * buffer"),
+           R2 = R_sq,
+           AICc = AIC_delta-min(AIC_delta)) %>% 
+  write.csv("../output/glm_mad.csv")
+
+
+anova(glm_null, glm_1, glm_2, glm_3, glm_4)
+```
+
+
 
 ## Fixed effects of tile number and buffer size on SSIM
 
 
 ```{r, fig.width=12}
-glm_ssim<- glmmTMB(data = glmm_data %>%  filter(metric == "SSIM"), 
-                         formula = value ~ tiles*buffer + (1| T_bufferDist) + (1|landscape), 
-                         family = beta_family(link = "logit"))
+glm_ssim<- betareg(data = glmm_data %>%  filter(metric == "SSIM"), 
+               formula = value ~ tiles*buffer + T_bufferDist + landscape)
 summary(glm_ssim)
-r.squaredGLMM(glm_ssim)
+summary(glm_ssim)$pseudo.r.squared
 car::Anova(glm_ssim)
+
+tidy(glm_ssim) %>% 
+  write.csv("../output/glm_summary_ssim.csv")
+
+tidy(car::Anova(glm_ssim))%>% 
+  write.csv("../output/glm_anova_ssim.csv")
 
 # diagnostic plot
 binnedplot(predict(glm_ssim,type='response'),
            resid(glm_ssim,type='response'))
 ```
+
+```{r}
+R_sq <- rep(NA, 4)
+AIC_delta <- rep(NA,4)
+
+glm_null <- betareg(data = glmm_data %>%  filter(metric == "SSIM"), 
+               formula = value ~ T_bufferDist + landscape)
+R_sq[1] <- summary(glm_null)$pseudo.r.squared
+AIC_delta[1] <- AICc(glm_null)
+
+glm_1 <- betareg(data = glmm_data %>%  filter(metric == "SSIM"), 
+               formula = value ~ tiles + T_bufferDist + landscape)
+R_sq[2] <- summary(glm_1)$pseudo.r.squared
+AIC_delta[2] <- AICc(glm_1)
+
+glm_2 <- betareg(data = glmm_data %>%  filter(metric == "SSIM"), 
+               formula = value ~ buffer + T_bufferDist + landscape)
+R_sq[3] <- summary(glm_2)$pseudo.r.squared
+AIC_delta[3] <- AICc(glm_2)
+
+glm_3 <- betareg(data = glmm_data %>%  filter(metric == "SSIM"), 
+               formula = value ~ tiles + buffer + T_bufferDist + landscape)
+R_sq[4] <- summary(glm_3)$pseudo.r.squared
+AIC_delta[4] <- AICc(glm_3)
+
+glm_4 <- betareg(data = glmm_data %>%  filter(metric == "SSIM"), 
+               formula = value ~ tiles*buffer + T_bufferDist + landscape)
+R_sq[5] <- summary(glm_4)$pseudo.r.squared
+AIC_delta[5] <- AICc(glm_4)
+
+data.frame(glm = c("null", "tiles", "buffer", "tiles + buffer", "tiles * buffer"),
+           R2 = R_sq,
+           AICc = min(AIC_delta)- AIC_delta)
+
+data.frame(glm = c("null", "tiles", "buffer", "tiles + buffer", "tiles * buffer"),
+           R2 = R_sq,
+           AICc = AIC_delta-min(AIC_delta)) %>% 
+  write.csv("../output/glm_ssim.csv")
+
+
+car::Anova(glm_null, glm_1, glm_2, glm_3, glm_4)
+```
+
+
 
 # References
 

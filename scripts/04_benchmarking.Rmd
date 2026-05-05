@@ -35,7 +35,8 @@ head(benchmark_data <- read.csv("../output/Benchmarking_Results_107.csv")
 # Benchmarking results
 
 ```{r fig.width=3, fig.height=6}
-a <- benchmark_data %>% 
+a <- benchmark_data %>%
+  mutate(nCores = factor(nCores)) %>% 
   ggplot(aes(y = runTime, 
              x = T_nTiles)) +
   geom_point(aes(color = nCores,
@@ -57,12 +58,14 @@ a <- benchmark_data %>%
   scale_x_continuous(breaks = c(1, 4, 9, 16, 25)) +
   scale_color_bamako(reverse = TRUE, 
                     range = c(0.2,1),
-                    breaks = c(1,2,4,6,8,10)) +
+                    breaks = c(1,2,4,6,8,10),
+                    discrete = TRUE) +
   theme_bw() +
   theme(legend.position = "none")+
   theme(aspect.ratio = 1)
 
 b <- benchmark_data %>% 
+  mutate(nCores = factor(nCores)) %>% 
   ggplot(aes(y = runTime_speedup, 
              x = T_nTiles)) +
   geom_point(aes(color = nCores,
@@ -83,12 +86,14 @@ b <- benchmark_data %>%
   scale_x_continuous(breaks = c(1, 4, 9, 16, 25)) +
   scale_color_bamako(reverse = TRUE, 
                     range = c(0.2,1),
-                    breaks = c(1, 2,4,6,8,10)) +
+                    breaks = c(1, 2,4,6,8,10),
+                    discrete = TRUE) +
   theme_bw()+
   theme(legend.position = "none")+
   theme(aspect.ratio = 1)
 
 c <- benchmark_data %>% 
+  mutate(nCores = factor(nCores)) %>% 
   ggplot(aes(y = memory, 
              x = T_nTiles)) +
   geom_point(aes(color = nCores,
@@ -107,15 +112,17 @@ c <- benchmark_data %>%
   labs(y = "Max Memory Usage (GB)",
        x = "# of Tiles",
        color = "# of Cores") +
+  guides(color = guide_legend(nrow = 2)) +
   scale_x_continuous(breaks = c(1, 4, 9, 16, 25)) +
   scale_color_bamako(reverse = TRUE, 
                     range = c(0.2,1),
-                    breaks = c(1,2,4,6,8,10)) +
+                    breaks = c(1,2,4,6,8,10),
+                    discrete = TRUE) +
   theme_bw()+
   theme(legend.position = "bottom",
         aspect.ratio = 1)
 
-plot_grid(a,b,c, nrow = 3, rel_heights =  c(1,1,1.35))
+plot_grid(a,b,c, nrow = 3, rel_heights =  c(1,1,1.4))
 ```
 
 
@@ -132,6 +139,8 @@ ggsave(plot = last_plot(),
 
 ```{r}
 glmm_data <- benchmark_data %>%
+  mutate(T_nTiles = scale(T_nTiles),
+         nCores = scale(nCores)) %>% 
   rename("tiles" = "T_nTiles",
          "cores" = "nCores",
          "landscape" = "focalArea")
@@ -141,57 +150,158 @@ glmm_data <- benchmark_data %>%
 ## Fixed effects of tile number and parallelisation on runtime
 
 
+
+
 ```{r, fig.width=12}
-glm_runTime <- glmer(data = glmm_data, 
-                     formula = runTime ~ tiles*cores + (1|landscape), 
-                     family = Gamma(link = "log"))
+glm_runTime <- glm(data = glmm_data, 
+                   formula = runTime ~ tiles*cores + landscape, 
+                   family = Gamma(link = "log"))
 summary(glm_runTime)
 r.squaredGLMM(glm_runTime)
 car::Anova(glm_runTime)
 
+
+tidy(glm_runTime) %>% 
+  write.csv("../output/glm_summary_runTime.csv")
+
+tidy(car::Anova(glm_runTime))%>% 
+  write.csv("../output/glm_anova_runTime.csv")
+
+
 # diagnostic plot
-a <- plot(glm_runTime, 
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "fitted vs residual with smooth line")
-b <- plot(glm_runTime,
-          sqrt(abs(resid(.)))~fitted(.),
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "scale-location")
-c <- lattice::qqmath(glm_runTime, 
-                     main = "Q-Q")
-d <- plot(glm_runTime, rstudent(.) ~ hatvalues(.), 
-          main = "residuals vs leverage")
-cowplot::plot_grid(a,b,c,d)
+plot(glm_runTime)
 ```
+
+### Permutation importance
+
+```{r}
+R_sq <- rep(NA, 4)
+AIC_delta <- rep(NA,4)
+
+glm_null <- glm(data = glmm_data, 
+                   formula = runTime ~ landscape, 
+                   family = Gamma(link = "log"))
+R_sq[1] <- r.squaredGLMM(glm_null)[2,2]
+AIC_delta[1] <- AICc(glm_null)
+
+glm_1 <- glm(data = glmm_data, 
+                   formula = runTime ~ tiles + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[2] <- r.squaredGLMM(glm_1)[2,2]
+AIC_delta[2] <- AICc(glm_1)
+
+glm_2 <- glm(data = glmm_data, 
+                   formula = runTime ~ cores + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[3] <- r.squaredGLMM(glm_2)[2,2]
+AIC_delta[3] <- AICc(glm_2)
+
+glm_3 <- glm(data = glmm_data, 
+                   formula = runTime ~ tiles + cores + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[4] <- r.squaredGLMM(glm_3)[2,2]
+AIC_delta[4] <- AICc(glm_3)
+
+glm_4 <- glm(data = glmm_data, 
+                   formula = runTime ~ tiles*cores + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[5] <- r.squaredGLMM(glm_4)[2,2]
+AIC_delta[5] <- AICc(glm_4)
+
+data.frame(glm = c("null", "tiles", "core", "tiles + core", "tiles * core"),
+           R2 = R_sq,
+           AICc = min(AIC_delta)- AIC_delta)
+
+data.frame(glm = c("null", "tiles", "core", "tiles + core", "tiles * core"),
+           R2 = R_sq,
+           AICc = AIC_delta-min(AIC_delta)) %>% 
+  write.csv("../output/glm_runtime.csv")
+
+
+anova(glm_null, glm_1, glm_2, glm_3, glm_4)
+
+```
+
+
+
 
 ## Fixed effects of tile number and parallelisation on maximum memory usage
 
 ```{r, fig.width=12}
-glm_memory <- glmer(data = glmm_data,
-                         formula = memory ~ tiles*cores + (1|landscape), 
-                         family = Gamma(link = "log"))
+glm_memory <- glm(data = glmm_data,
+                  formula = memory ~ tiles*cores + landscape, 
+                  family = Gamma(link = "log"))
 summary(glm_memory)
 r.squaredGLMM(glm_memory)
 car::Anova(glm_memory)
 
+tidy(glm_memory) %>% 
+  write.csv("../output/glm_summary_memory.csv")
+
+tidy(car::Anova(glm_memory))%>% 
+  write.csv("../output/glm_anova_memory.csv")
+
+
 # diagnostic plot
-a <- plot(glm_memory, 
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "fitted vs residual with smooth line")
-b <- plot(glm_memory,
-          sqrt(abs(resid(.)))~fitted(.),
-          type=c("p","smooth"), 
-          col.line=1,
-          main = "scale-location")
-c <- lattice::qqmath(glm_memory, 
-                     main = "Q-Q")
-d <- plot(glm_memory, rstudent(.) ~ hatvalues(.), 
-          main = "residuals vs leverage")
-cowplot::plot_grid(a,b,c,d)
+plot(glm_runTime)
 ```
+
+
+
+
+
+
+### Permutation importance
+
+```{r}
+R_sq <- rep(NA, 4)
+AIC_delta <- rep(NA,4)
+
+glm_null <- glm(data = glmm_data, 
+                   formula = memory ~ landscape, 
+                   family = Gamma(link = "log"))
+R_sq[1] <- r.squaredGLMM(glm_null)[2,2]
+AIC_delta[1] <- AICc(glm_null)
+
+glm_1 <- glm(data = glmm_data, 
+                   formula = memory ~ tiles + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[2] <- r.squaredGLMM(glm_1)[2,2]
+AIC_delta[2] <- AICc(glm_1)
+
+glm_2 <- glm(data = glmm_data, 
+                   formula = memory ~ cores + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[3] <- r.squaredGLMM(glm_2)[2,2]
+AIC_delta[3] <- AICc(glm_2)
+
+glm_3 <- glm(data = glmm_data, 
+                   formula = memory ~ tiles + cores + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[4] <- r.squaredGLMM(glm_3)[2,2]
+AIC_delta[4] <- AICc(glm_3)
+
+glm_4 <- glm(data = glmm_data, 
+                   formula = memory ~ tiles*cores + landscape, 
+                   family = Gamma(link = "log"))
+R_sq[5] <- r.squaredGLMM(glm_4)[2,2]
+AIC_delta[5] <- AICc(glm_4)
+
+data.frame(glm = c("null", "tiles", "core", "tiles + core", "tiles * core"),
+           R2 = R_sq,
+           AICc = min(AIC_delta)- AIC_delta)
+
+data.frame(glm = c("null", "tiles", "core", "tiles + core", "tiles * core"),
+           R2 = R_sq,
+           AICc = AIC_delta-min(AIC_delta)) %>% 
+  write.csv("../output/glm_memory.csv")
+
+
+anova(glm_null, glm_1, glm_2, glm_3, glm_4)
+
+```
+
+
 
 # Reference
 
